@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <title>دردشة ليالينا</title>
+  <style>
+    body { font-family: Arial, sans-serif; max-width: 800px; margin: auto; padding: 10px; background: #f9f9f9; }
+    #login-container, #chat-container { border: 1px solid #ccc; padding: 15px; margin-bottom: 20px; background: #fff; border-radius: 5px; }
+    #messages, #webMasterPrivateMessages { height: 200px; overflow-y: auto; border: 1px solid #ddd; padding: 10px; background: #fafafa; margin-bottom: 10px; }
+    label { display: block; margin-top: 10px; }
+    input[type="text"], input[type="password"], select, textarea { width: 100%; padding: 8px; margin-top: 5px; box-sizing: border-box; }
+    button { margin-top: 10px; padding: 10px 20px; }
+    .error { color: red; margin-top: 10px; }
+  </style>
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
+</head>
+<body>
+
+  <div id="login-container">
+    <h2>تسجيل الدخول</h2>
+    <label for="email">البريد الإلكتروني:</label>
+    <input type="text" id="email" />
+    <label for="password">كلمة المرور:</label>
+    <input type="password" id="password" />
+    <button onclick="login()">دخول</button>
+    <button onclick="register()">إنشاء حساب</button>
+    <div id="error" class="error"></div>
+  </div>
+
+  <div id="chat-container" style="display:none;">
+    <button onclick="logout()">تسجيل خروج</button>
+    <h2>غرف الدردشة</h2>
+    <select id="roomSelector" onchange="switchRoom()">
+      <option value="گهوة عزاوي">گهوة عزاوي</option>
+      <option value="بغداد">بغداد</option>
+      <option value="لمت بنات">لمت بنات</option>
+      <option value="ميوزك">ميوزك</option>
+      <option value="دينية">دينية</option>
+    </select>
+
+    <div id="messages"></div>
+
+    <label for="messageInput">اكتب رسالة:</label>
+    <input type="text" id="messageInput" />
+    <button onclick="sendMessage()">إرسال</button>
+
+    <hr />
+
+    <h3>إرسال رسالة خاصة</h3>
+    <label for="toUser">البريد الإلكتروني للمستقبل:</label>
+    <input type="text" id="toUser" />
+    <label for="privateMessage">الرسالة الخاصة:</label>
+    <textarea id="privateMessage" rows="3"></textarea>
+    <button onclick="sendPrivateMessage()">إرسال رسالة خاصة</button>
+
+    <hr />
+
+    <div id="webMasterSection" style="display:none;">
+      <h3>رسائل خاصة - الويب ماستر</h3>
+      <div id="webMasterPrivateMessages"></div>
+    </div>
+  </div>
+
+<script>
+  const firebaseConfig = {
+    apiKey: "ضع-API-Key-هنا",
+    authDomain: "layalina-chat.firebaseapp.com",
+    databaseURL: "https://layalina-chat.firebaseio.com",
+    projectId: "layalina-chat",
+    storageBucket: "layalina-chat.appspot.com",
+    messagingSenderId: "000000000000",
+    appId: "1:000000000000:web:xxxxxxxxxxxxxxxx"
+  };
+
+  firebase.initializeApp(firebaseConfig);
+  const auth = firebase.auth();
+  const db = firebase.database();
+
+  let currentUser = null;
+  let currentRoom = "گهوة عزاوي";
+  const webMasterEmail = "iraqi4ever33@gmail.com";
+
+  function isWebMaster(email) {
+    return email === webMasterEmail;
+  }
+
+  function validateEmail(email) {
+    const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return re.test(email);
+  }
+
+  function validatePassword(password) {
+    return password.length >= 6;
+  }
+
+  function sanitizeText(text) {
+    const div = document.createElement('div');
+    div.appendChild(document.createTextNode(text));
+    return div.innerHTML;
+  }
+
+  auth.onAuthStateChanged(user => {
+    if (user) {
+      currentUser = user;
+      document.getElementById("login-container").style.display = "none";
+      document.getElementById("chat-container").style.display = "block";
+      listenForMessages();
+      if (isWebMaster(currentUser.email)) {
+        document.getElementById("webMasterSection").style.display = "block";
+        listenForAllPrivateMessages();
+      }
+    } else {
+      currentUser = null;
+      document.getElementById("login-container").style.display = "block";
+      document.getElementById("chat-container").style.display = "none";
+      document.getElementById("webMasterSection").style.display = "none";
+      document.getElementById("messages").innerHTML = "";
+    }
+  });
+
+  function login() {
+    const email = document.getElementById("email").value.trim();
+    const pass = document.getElementById("password").value;
+
+    if (!validateEmail(email)) {
+      document.getElementById("error").innerText = "يرجى إدخال بريد إلكتروني صحيح.";
+      return;
+    }
+    if (!validatePassword(pass)) {
+      document.getElementById("error").innerText = "كلمة المرور يجب أن تكون 6 أحرف على الأقل.";
+      return;
+    }
+
+    auth.signInWithEmailAndPassword(email, pass)
+      .then(() => document.getElementById("error").innerText = "")
+      .catch(err => document.getElementById("error").innerText = "فشل تسجيل الدخول: " + err.message);
+  }
+
+  function register() {
+    const email = document.getElementById("email").value.trim();
+    const pass = document.getElementById("password").value;
+
+    if (!validateEmail(email)) {
+      document.getElementById("error").innerText = "يرجى إدخال بريد إلكتروني صحيح.";
+      return;
+    }
+    if (!validatePassword(pass)) {
+      document.getElementById("error").innerText = "كلمة المرور يجب أن تكون 6 أحرف على الأقل.";
+      return;
+    }
+
+    auth.createUserWithEmailAndPassword(email, pass)
+      .then(() => document.getElementById("error").innerText = "")
+      .catch(err => document.getElementById("error").innerText = "فشل إنشاء الحساب: " + err.message);
+  }
+
+  function logout() {
+    auth.signOut();
+  }
+
+  function switchRoom() {
+    currentRoom = document.getElementById("roomSelector").value;
+    document.getElementById("messages").innerHTML = "";
+    listenForMessages();
+  }
+
+  function listenForMessages() {
+    db.ref("rooms/" + currentRoom).off();
+    db.ref("rooms/" + currentRoom).on("child_added", snapshot => {
+      const msg = snapshot.val();
+      const msgEl = document.createElement("div");
+      msgEl.innerText = `${msg.sender}: ${msg.text}`;
+      document.getElementById("messages").appendChild(msgEl);
+    });
+  }
+
+  function sendMessage() {
+    const msg = document.getElementById("messageInput").value;
+    if (!msg) return;
+    db.ref("rooms/" + currentRoom).push({
+      sender: currentUser.email,
+      text: sanitizeText(msg)
+    });
+    document.getElementById("messageInput").value = "";
+  }
+
+  function sendPrivateMessage() {
+    const to = document.getElementById("toUser").value;
+    const text = document.getElementById("privateMessage").value;
+    if (!validateEmail(to) || !text) return;
+    const privatePath = getPrivatePath(currentUser.email, to);
+    db.ref(privatePath).push({
+      from: currentUser.email,
+      to: to,
+      text: sanitizeText(text)
+    });
+    alert("تم إرسال الرسالة الخاصة.");
+    document.getElementById("privateMessage").value = "";
+  }
+
+  func
